@@ -154,6 +154,8 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
   override def iterator = new Iterator[R] with Closeable {
+    val hasSession = Session.hasCurrentSession
+    if (!hasSession) org.squeryl.SessionFactory.newSession.bindToCurrentThread
 
     val sw = new StatementWriter(false, _dbAdapter)
     ast.write(sw)
@@ -177,6 +179,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     def close {
       stmt.close
       rs.close
+      if (!hasSession) Session.currentSession.unbindFromCurrentThread
     }
 
     def _next = {

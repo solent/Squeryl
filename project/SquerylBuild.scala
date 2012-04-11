@@ -44,13 +44,7 @@ object SquerylBuild extends Build {
 			  					<url>https://github.com/davewhittaker</url>
 			  				</developer>
 			  			  </developers>),
-    		  publishTo <<= version { v => //add credentials to ~/.sbt/sonatype.sbt
-    		  	val nexus = "https://oss.sonatype.org/"
-				if (v.trim.endsWith("SNAPSHOT")) 
-				  Some("snapshots" at nexus + "content/repositories/snapshots") 
-				 else
-				   Some("releases"  at nexus + "service/local/staging/deploy/maven2")
-			  },
+              publishTo := Some(Resolver.file("file", file("target/publish"))),
 			  publishArtifact in Test := false,
 			  pomIncludeRepository := { _ => false },
 			  //below is for lsync, run "ls-write-version", commit to github, then run "lsync" 

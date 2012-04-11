@@ -127,8 +127,8 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
   def statement: String = _genStatement(true)
 
   private def _genStatement(forDisplay: Boolean) = {
-    val adapter = Session.currentSessionOption.map(_.databaseAdapter).getOrElse(new org.squeryl.adapters.H2Adapter)
-    val sw = new StatementWriter(forDisplay, adapter)
+
+    val sw = new StatementWriter(forDisplay, Session.currentSession.databaseAdapter)
     ast.write(sw)
     sw.statement
   }
@@ -218,7 +218,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     }
   }
 
-  override def toString = dumpAst + "\n" + _genStatement(true)
+  override def toString = dumpAst + (if (Session.hasCurrentSession) "\n" + _genStatement(true) else "")
 
   protected def createSubQueryable[U](q: Queryable[U]): SubQueryable[U] =
     if(q.isInstanceOf[View[_]]) {

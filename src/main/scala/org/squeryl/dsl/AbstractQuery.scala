@@ -127,8 +127,8 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
   def statement: String = _genStatement(true)
 
   private def _genStatement(forDisplay: Boolean) = {
-
-    val sw = new StatementWriter(forDisplay, Session.currentSession.databaseAdapter)
+    val adapter = Session.currentSessionOption.map(_.databaseAdapter).getOrElse(new org.squeryl.adapters.H2Adapter)
+    val sw = new StatementWriter(forDisplay, adapter)
     ast.write(sw)
     sw.statement
   }

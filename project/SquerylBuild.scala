@@ -9,7 +9,7 @@ object SquerylBuild extends Build {
       base = file("."),
       settings = Project.defaultSettings ++ lsSettings ++ Seq(
     		  description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety",
-    		  organization := "org.squeryl",
+    		  organization := "com.github.aselab",
     		  version := "0.9.5-RC2",
     		  version <<= version { v => //only release *if* -Drelease=true is passed to JVM
     		  	val release = Option(System.getProperty("release")) == Some("true")

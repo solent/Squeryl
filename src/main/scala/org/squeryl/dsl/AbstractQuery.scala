@@ -154,8 +154,12 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
   override def iterator = new Iterator[R] with Closeable {
-    val hasSession = Session.hasCurrentSession
-    if (!hasSession) org.squeryl.SessionFactory.newSession.bindToCurrentThread
+    var session: Option[Session] = None
+    if (!Session.hasCurrentSession) {
+      val s = org.squeryl.SessionFactory.newSession
+      s.bindToCurrentThread
+      session = Some(s)
+    }
 
     val sw = new StatementWriter(false, _dbAdapter)
     ast.write(sw)
@@ -178,16 +182,19 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     
     def close {
       stmt.close
-      rs.close
-      if (!hasSession) Session.currentSession.unbindFromCurrentThread
+      Utils.close(rs)
+      session.foreach {s =>
+        s.unbindFromCurrentThread
+        s.cleanup
+      }
+      session = None
     }
 
     def _next = {
       _hasNext = rs.next
 
       if(!_hasNext) {// close it since we've completed the iteration
-        Utils.close(rs)
-        stmt.close
+        close
 
         if(s.statisticsListener != None) {
           s.statisticsListener.get.resultSetIterationEnded(statEx.uuid, System.currentTimeMillis, rowCount, true)

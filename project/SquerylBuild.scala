@@ -10,24 +10,14 @@ object SquerylBuild extends Build {
       settings = Project.defaultSettings ++ lsSettings ++ Seq(
     		  description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety",
     		  organization := "com.github.aselab",
-    		  version := "0.9.5-RC2",
-    		  version <<= version { v => //only release *if* -Drelease=true is passed to JVM
-    		  	val release = Option(System.getProperty("release")) == Some("true")
-    		  	if(release)
-    		  		v 
-    		  	else {	
-    		  		val suffix = Option(System.getProperty("suffix"))
-    		  		var i = v.indexOf('-')
-    		  		if(i < 0) i = v.length
-    		  		v.substring(0,i) + "-" + (suffix getOrElse "SNAPSHOT")
-    		  	}
-  			  },
+    		  version := "0.9.5",
     		  parallelExecution := false,
     		  publishMavenStyle := true,
-  			  scalaVersion := "2.9.1",
-  			  crossScalaVersions := Seq("2.9.1","2.9.0-1","2.9.0","2.8.1","2.8.0"),
+  			  scalaVersion := "2.9.2",
+  			  crossScalaVersions := Seq("2.9.2", "2.9.1", "2.9.0-1", "2.9.0", "2.8.1", "2.8.0"),
+          crossPaths := false,
   			  licenses := Seq("Apache 2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
-  			  homepage := Some(url("http://www.squeryl.org")),
+  			  homepage := Some(url("http://squeryl.org")),
 			  pomExtra := (<scm>
 			  				<url>git@github.com:max-l/squeryl.git</url>
 			  				<connection>scm:git:git@github.com:max-l/squeryl.git</connection>
@@ -44,7 +34,12 @@ object SquerylBuild extends Build {
 			  					<url>https://github.com/davewhittaker</url>
 			  				</developer>
 			  			  </developers>),
-              publishTo := Some(Resolver.file("file", file("target/publish"))),
+        publishTo := Some(Resolver.file("file", file("target/publish"))),
+        publish ~= {_ =>
+          val script = Path.userHome / ".sbt/publish"
+          if (script.exists)
+            "%s %s".format(script.getAbsolutePath, file("target/publish").getAbsolutePath) !
+        },
 			  publishArtifact in Test := false,
 			  pomIncludeRepository := { _ => false },
 			  //below is for lsync, run "ls-write-version", commit to github, then run "lsync" 

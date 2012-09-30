@@ -16,7 +16,7 @@
 package org.squeryl;
 
 import dsl.ast._
-import dsl.{QueryDsl}
+import dsl.{CompositeKey, QueryDsl}
 import internals._
 import java.sql.{Statement}
 import logging.StackMarker
@@ -24,12 +24,9 @@ import scala.reflect.Manifest
 import collection.mutable.ArrayBuffer
 import javax.swing.UIDefaults.LazyValue
 
-private [squeryl] object DummySchema extends Schema
+//private [squeryl] object DummySchema extends Schema
 
-class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _prefix: Option[String]) extends View[T](n, c, schema, _prefix) {
-
-  def this(n:String)(implicit manifestT: Manifest[T]) =
-    this(n, manifestT.erasure.asInstanceOf[Class[T]], DummySchema, None)  
+class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _prefix: Option[String], ked: Option[KeyedEntityDef[T,_]]) extends View[T](n, c, schema, _prefix, ked) {
 
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
@@ -85,21 +82,22 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
     r
   }
 
-  def insert(t: Query[T]) = org.squeryl.internals.Utils.throwError("not implemented")
+//  def insert(t: Query[T]) = org.squeryl.internals.Utils.throwError("not implemented")
 
   def insert(e: Iterable[T]):Unit =
-    _batchedUpdateOrInsert(e, posoMetaData.fieldsMetaData.filter(fmd => !fmd.isAutoIncremented && fmd.isInsertable), true, false)
+    _batchedUpdateOrInsert(e, t => posoMetaData.fieldsMetaData.filter(fmd => !fmd.isAutoIncremented && fmd.isInsertable), true, false)
 
   /**
    * isInsert if statement is insert otherwise update
    */
-  private def _batchedUpdateOrInsert(e: Iterable[T], fmds: Iterable[FieldMetaData], isInsert: Boolean, checkOCC: Boolean):Unit = {
+  private def _batchedUpdateOrInsert(e: Iterable[T], fmdCallback: T => Iterable[FieldMetaData], isInsert: Boolean, checkOCC: Boolean):Unit = {
     
     val it = e.iterator
 
     if(it.hasNext) {
 
       val e0 = it.next
+      val fmds = fmdCallback(e0)
       val sess = Session.currentSession
       val dba = _dbAdapter
       val sw = new StatementWriter(dba)
@@ -107,15 +105,18 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
       if(isInsert) {
         val z = _callbacks.beforeInsert(e0.asInstanceOf[AnyRef])
-        _callbacks.beforeInsert(z)
+        forAfterUpdateOrInsert.append(z)
         dba.writeInsert(z.asInstanceOf[T], this, sw)
       }
       else {
         val z = _callbacks.beforeUpdate(e0.asInstanceOf[AnyRef])
-        _callbacks.beforeUpdate(z)
+        forAfterUpdateOrInsert.append(z)
         dba.writeUpdate(z.asInstanceOf[T], this, sw, checkOCC)
       }
-      
+
+      if(sess.isLoggingEnabled)
+        sess.log("Performing batched " + (if (isInsert) "insert" else "update") + " with " + sw.statement)
+
       val st = sess.connection.prepareStatement(sw.statement)
 
       try {
@@ -136,7 +137,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
           var idx = 1
           fmds.foreach(fmd => {
-            st.setObject(idx, dba.convertToJdbcValue(fmd.get(eN)))
+            st.setObject(idx, dba.convertToJdbcValue(fmd.getNativeJdbcValue(eN)))
             idx += 1
           })
           st.addBatch
@@ -158,8 +159,9 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
       }
 
       for(a <- forAfterUpdateOrInsert)
-        if(isInsert)
-          _callbacks.afterInsert(a)
+        if(isInsert) {
+          _setPersisted(_callbacks.afterInsert(a).asInstanceOf[T])
+        }
         else
           _callbacks.afterUpdate(a)
 
@@ -169,19 +171,19 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
   /**
    * Updates without any Optimistic Concurrency Control check 
    */
-  def forceUpdate(o: T)(implicit ev: T <:< KeyedEntity[_]) =
-    _update(o, false)
+  def forceUpdate(o: T)(implicit ked: KeyedEntityDef[T,_]) =
+    _update(o, false, ked)
   
-  def update(o: T)(implicit ev: T <:< KeyedEntity[_]):Unit =
-    _update(o, true)
+  def update(o: T)(implicit ked: KeyedEntityDef[T,_]):Unit =
+    _update(o, true, ked)
 
-  def update(o: Iterable[T])(implicit ev: T <:< KeyedEntity[_]):Unit =
-    _update(o, true)
+  def update(o: Iterable[T])(implicit ked: KeyedEntityDef[T,_]):Unit =
+    _update(o, ked.isOptimistic)
 
-  def forceUpdate(o: Iterable[T])(implicit ev: T <:< KeyedEntity[_]):Unit =
-    _update(o, false)
+  def forceUpdate(o: Iterable[T])(implicit ked: KeyedEntityDef[T,_]):Unit =
+    _update(o, ked.isOptimistic)
 
-  private def _update(o: T, checkOCC: Boolean) = {
+  private def _update(o: T, checkOCC: Boolean, ked: KeyedEntityDef[T,_]) = {
 
     val dba = Session.currentSession.databaseAdapter
     val sw = new StatementWriter(dba)
@@ -192,9 +194,9 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
     if(cnt != 1) {
       if(checkOCC && posoMetaData.isOptimistic) {
-        val version = posoMetaData.optimisticCounter.get.get(o.asInstanceOf[AnyRef])
+        val version = posoMetaData.optimisticCounter.get.getNativeJdbcValue(o.asInstanceOf[AnyRef])
         throw new StaleUpdateException(
-           "Object "+prefixedName + "(id=" + o.asInstanceOf[KeyedEntity[_]].id + ", occVersionNumber=" + version +
+           "Object "+prefixedName + "(id=" + ked.getId(o) + ", occVersionNumber=" + version +
            ") has become stale, it cannot be updated under optimistic concurrency control")
       }
       else
@@ -206,15 +208,33 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
   private def _update(e: Iterable[T], checkOCC: Boolean):Unit = {
 
-    val pkMd = posoMetaData.primaryKey.getOrElse(org.squeryl.internals.Utils.throwError("method was called with " + posoMetaData.clasz.getName + " that is not a KeyedEntity[]")).left.get
+    def buildFmds(t: T): Iterable[FieldMetaData] = {
+      val pkList = posoMetaData.primaryKey.getOrElse(
+        org.squeryl.internals.Utils.throwError("method was called with " + posoMetaData.clasz.getName + " that is not a KeyedEntity[]")).fold(
+        pkMd => List(pkMd),
+        pkGetter => {
+          // Just for side-effect...
+          var fields: Option[List[FieldMetaData]]  = None
+          Utils.createQuery4WhereClause(this, (t0:T) => {
+            val ck = pkGetter.invoke(t0).asInstanceOf[CompositeKey]
 
-    val fmds = List(
-      posoMetaData.fieldsMetaData.filter(fmd=> fmd != pkMd && ! fmd.isOptimisticCounter && fmd.isUpdatable).toList,
-      List(pkMd),
-      posoMetaData.optimisticCounter.toList
-    ).flatten
+            fields = Some(ck._fields.toList)
 
-    _batchedUpdateOrInsert(e, fmds, false, checkOCC)
+            new EqualityExpression(new InputOnlyConstantExpressionNode(1), new InputOnlyConstantExpressionNode(1))
+          })
+
+          fields getOrElse (internals.Utils.throwError("No PK fields found"))
+        }
+      )
+
+      List(
+        posoMetaData.fieldsMetaData.filter(fmd=> ! fmd.isIdFieldOfKeyedEntity && ! fmd.isOptimisticCounter && fmd.isUpdatable).toList,
+        pkList,
+        posoMetaData.optimisticCounter.toList
+      ).flatten
+    }
+
+    _batchedUpdateOrInsert(e, buildFmds _, false, checkOCC)
   }
   
   def update(s: T =>UpdateStatement):Int = {
@@ -259,10 +279,10 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
   def deleteWhere(whereClause: T => LogicalBoolean)(implicit dsl: QueryDsl): Int =
     delete(dsl.from(this)(t => dsl.where(whereClause(t)).select(t)))      
 
-  def delete[K](k: K)(implicit ev: T <:< KeyedEntity[K], dsl: QueryDsl): Boolean  = {
+  def delete[K](k: K)(implicit ked: KeyedEntityDef[T,K], dsl: QueryDsl): Boolean  = {
     import dsl._
     val q = from(this)(a => dsl.where {
-      FieldReferenceLinker.createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(a.id, k)
+      FieldReferenceLinker.createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(ked.getId(a), k)
     } select(a))
 
     lazy val z = q.headOption
@@ -281,8 +301,8 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
     deleteCount == 1
   }
 
-  def insertOrUpdate(o: T)(implicit ev: T <:< KeyedEntity[_]): T = {
-    if(o.isPersisted)
+  def insertOrUpdate(o: T)(implicit ked: KeyedEntityDef[T,_]): T = {
+    if(ked.isPersisted(o))
       update(o)
     else
       insert(o)

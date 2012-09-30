@@ -22,26 +22,28 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import org.squeryl.dsl.{GroupWithMeasures}
 import org.squeryl.dsl._
-import ast.TypedExpressionNode
 import org.squeryl._
 import adapters.{MSSQLServer, PostgreSqlAdapter, OracleAdapter, MySQLAdapter, DerbyAdapter}
 import internals.{FieldMetaData, FieldReferenceLinker}
 import org.scalatest.Suite
 import collection.mutable.ArrayBuffer
 import org.squeryl.internals.StatementWriter
+import org.squeryl.PrimitiveTypeMode._
 import org.squeryl.dsl.ast.ExpressionNode
 
 
 object SingleTestRun extends org.scalatest.Tag("SingleTestRun")
 
-class SchoolDbObject extends KeyedEntity[Int] {
+class SchoolDbObject {
   var id: Int = 0
 }
 
 trait Person
 
 class Student(var name: String, var lastName: String, var age: Option[Int], var gender: Int, var addressId: Option[Int], var isMultilingual: Option[Boolean])
-  extends SchoolDbObject with Person {
+  extends Person {
+  
+  val id: Int = 0
 
   override def toString = "Student:" + id + ":" + name
   
@@ -50,12 +52,17 @@ class Student(var name: String, var lastName: String, var age: Option[Int], var 
   def dummyKey = compositeKey(age, addressId)
 }
 
+case class Course2(id: Int, name: String, confirmed: Boolean, occVersionNumber: Int)
+
 case class Course(var name: String, var startDate: Date, var finalExamDate: Option[Date],
   @Column("meaninglessLongZ")
   var meaninglessLong: Long,
   @Column("meaninglessLongOption")
-  var meaninglessLongOption: Option[Long], val confirmed: Boolean)
-  extends SchoolDbObject with Optimistic {
+  var meaninglessLongOption: Option[Long], val confirmed: Boolean) {
+  
+  val id: Int = 0
+  
+  val occVersionNumber: Int = 0
 
   def occVersionNumberZ = occVersionNumber
 
@@ -96,11 +103,15 @@ case class PostalCode(code: String) extends KeyedEntity[String] {
   def id = code
 }
 
-class School(val addressId: Int, val name: String, val parentSchoolId: Long) extends KeyedEntity[Long] {
+case class School(val addressId: Int, val name: String, val parentSchoolId: Long, val transientField: String) extends KeyedEntity[Long] {
   var id_field: Long = 0
 
   def id = id_field
 }
+
+case class YieldInspectionTest(id:Int, num:Int)
+
+case class YieldInspectionAnother(id:Int, name:String, testId:Int)
 
 object SDB extends SchoolDb
 
@@ -116,6 +127,35 @@ class StringKeyedEntity(val id: String, val tempo: Tempo.Tempo) extends KeyedEnt
 }
 
 class SchoolDb extends Schema {
+
+  implicit object personKED extends KeyedEntityDef[Student,Int] {
+    def getId(a:Student) = a.id
+    def isPersisted(a:Student) = a.id > 0
+    def idPropertyName = "id"
+  }
+  
+  implicit object schoolDbObjectKED extends KeyedEntityDef[SchoolDbObject,Int] {
+    def getId(a:SchoolDbObject) = a.id
+    def isPersisted(a:SchoolDbObject) = a.id > 0
+    def idPropertyName = "id"
+  }
+  
+  
+  implicit object courseKED extends KeyedEntityDef[Course,Int] {
+    def getId(a:Course) = a.id
+    def isPersisted(a:Course) = a.id > 0
+    def idPropertyName = "id"
+    override def optimisticCounterPropertyName = Some("occVersionNumber")
+  }
+  
+  implicit object course2KED extends KeyedEntityDef[Course2,Int] {
+    def getId(a:Course2) = a.id
+    def isPersisted(a:Course2) = a.id > 0
+    def idPropertyName = "id"
+    override def optimisticCounterPropertyName = Some("occVersionNumber")
+  }
+  
+  val courses2 = table[Course2]
 
   import org.squeryl.PrimitiveTypeMode._
 
@@ -144,7 +184,7 @@ class SchoolDb extends Schema {
 
   val professors = table[Professor]
   
-  val students = table[Student]
+  val students = table[Student] //(implicitly[Manifest[Student]],personKEDO)
   
   val addresses = table[Address]("AddressexageratelyLongName")
 
@@ -157,6 +197,10 @@ class SchoolDb extends Schema {
   val schools = table[School]
 
   val postalCodes = table[PostalCode]
+
+  
+  val tests = table[YieldInspectionTest]
+  val others = table[YieldInspectionAnother]
   
 // uncomment to test : when http://www.assembla.com/spaces/squeryl/tickets/14-assertion-fails-on-self-referring-onetomanyrelationship
 //  an unverted constraint gets created, unless expr. is inverted : child.parentSchoolId === parent.id
@@ -184,6 +228,10 @@ class SchoolDb extends Schema {
     e.tempo.defaultsTo(Tempo.Largo)
   ))
 
+  on(schools)(s => declare(
+    s.transientField is transient
+  ))
+  
   // disable the override, since the above is good for Oracle only, this is not a usage demo, but
   // a necessary hack to test the dbType override mechanism and still allow the test suite can run on all database :
   override def columnTypeFor(fieldMetaData: FieldMetaData, owner: Table[_])  =
@@ -271,74 +319,6 @@ class TestInstance(schema : SchoolDb){
   val tournesol = professors.insert(new Professor("tournesol", 80.0F, Some(70.5F), 80.0F, Some(70.5F)))
 }
 
-
-abstract class TypeSystemExerciseTests extends SchoolDbTestBase{
-
-  import org.squeryl.PrimitiveTypeMode._
-  import schema._
-
-  test("exerciseTypeSystem1") {
-    val testInstance = sharedTestInstance; import testInstance._
-     val q =
-      from(professors, courseAssigments, students, courses, courseSubscriptions, addresses)(
-       (p, ca, s, c, cs, a) =>
-        where(
-         p.id === ca.professorId and
-         ca.courseId === c.id and
-         cs.studentId === s.id and
-         cs.courseId === c.id and
-         s.addressId === a.id
-        )
-        groupBy(
-          s.isMultilingual : TypedExpressionNode[Option[Boolean]],
-          p.yearlySalary : TypedExpressionNode[Float],
-          p.weight :  TypedExpressionNode[Option[Float]],
-          a.appNumberSuffix : TypedExpressionNode[Option[String]],
-          c.finalExamDate : TypedExpressionNode[Option[Date]],
-          a.appNumber : TypedExpressionNode[Option[Int]],
-          c.meaninglessLongOption : TypedExpressionNode[Option[Long]],
-          c.meaninglessLongOption / (s.addressId+1) : TypedExpressionNode[Option[Double]] // TODO: fix NOT A GROUP BY exception ....
-        )
-        compute(
-          min(p.id) : TypedExpressionNode[Option[Long]],
-          avg(ca.id) : TypedExpressionNode[Option[Float]],
-          avg(c.meaninglessLongOption) : TypedExpressionNode[Option[Double]],
-          max(c.finalExamDate) : TypedExpressionNode[Option[Date]],
-          min(a.numberSuffix) : TypedExpressionNode[Option[String]],
-          max(s.isMultilingual) : TypedExpressionNode[Option[Boolean]],
-          min(c.startDate)  : TypedExpressionNode[Option[Date]]
-        )
-      )
-
-    try {
-       q.single : GroupWithMeasures[
-       Product8[Option[Boolean],
-        Float,
-        Option[Float],
-        Option[String],
-        Option[Date],
-        Option[Int],
-        Option[Long],
-        Option[Double]],
-       Product7[Option[Long],
-        Option[Float],
-        Option[Double],
-        Option[Date],
-        Option[String],
-        Option[Boolean],
-        Option[Date]]
-      ]
-      passed('exerciseTypeSystem1)
-    }
-    catch {
-      case e:Exception => {
-        println("statement failed : \n" + q.statement)
-        throw e
-      }
-    }
-  }
-}
-
 abstract class FullOuterJoinTests extends SchoolDbTestBase{
 
   import org.squeryl.PrimitiveTypeMode._
@@ -390,6 +370,9 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
   import org.squeryl.PrimitiveTypeMode._
   import schema._
 
+  
+  
+  
   test("StringKeyedEntities"){
     val testInstance = sharedTestInstance; import testInstance._
     val se = stringKeyedEntities.insert(new StringKeyedEntity("123", Tempo.Largo))
@@ -436,7 +419,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
   def addressesOfStudentsOlderThan24 =
     from(students, addresses)((s,a) =>
-      where((24 : NumericalExpression[Int]) < s.age and (24 lt s.age))
+      where((24 lt s.age) and (24 lt s.age))
       select(&(a.numberz || " " || a.streetName || " " || a.appNumber))
     )
 
@@ -537,6 +520,19 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     passed('testInOpWithStringList)
   }
   
+  test("transient annotation") {
+    
+
+    val s = schools.insert(new School(123,"EB123",0, "transient !"))
+    
+    val s2 = schools.lookup(s.id).get
+    
+    assert(s.id == s2.id)
+    
+    assert(s2.transientField != "transient !")
+    
+  }
+  
   test("lifecycleCallbacks") {
 
 
@@ -550,11 +546,11 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     val s1 = students.insert(new Student("z1", "z2", Some(4), 1, Some(4), Some(true)))
 
     assert(beforeInsertsOfPerson.exists(_ == s1))
-    assert(beforeInsertsOfKeyedEntity.exists(_ == s1))
+    assert(! beforeInsertsOfKeyedEntity.exists(_ == s1))
     assert(!beforeInsertsOfProfessor.exists(_ == s1))
     assert(!afterInsertsOfProfessor.exists(_ == s1))
 
-    val s2 = schools.insert(new School(0,"EB",0))
+    val s2 = schools.insert(new School(0,"EB",0, ""))
 
     assert(!beforeInsertsOfPerson.exists(_ == s2))
     assert(beforeInsertsOfKeyedEntity.exists(_ == s2))
@@ -573,7 +569,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     assert(beforeInsertsOfProfessor.exists(_ == s3))
     assert(afterInsertsOfProfessor.exists(_ == s3))
 
-    assert(professors.map(System.identityHashCode(_)).toSet == professorsCreatedWithFactory.toSet)
+    assert(professors.allRows.map(System.identityHashCode(_)).toSet == professorsCreatedWithFactory.toSet)
   }
 
 
@@ -642,14 +638,43 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     validateQuery('testLikeOperator, q, identity[Int], List(gaitan.id,georgi.id,gontran.id))
     
   }
-  
+
+  test("SingleOption"){
+    val testInstance = sharedTestInstance; import testInstance._
+    val q =
+      from(students)(s=>
+        where(s.name like "G%")
+        select(s.id)
+        orderBy(s.name)
+      )
+      
+    val shouldBeRight =
+      try {
+        Left(q.singleOption)
+      }
+      catch {
+        case e: Exception => Right(e)
+      }
+
+    assert(shouldBeRight.isRight, "singleOption did not throw an exception when it should have") 
+
+    val q2 =
+      from(students)(s=>
+        where(s.name like "Gontran")
+        select(s.id)
+        orderBy(s.name)
+      )
     
-  test("isNull and === None comparison", SingleTestRun){  
+    q2.singleOption should equal(Some(gontran.id))
+  }  
+    
+  test("isNull and === None comparison"){  
     val z1 =
       from(students)(s=>
         where({
-          s.isMultilingual === None          
-          })
+          //TODO: REFACTOR Z
+          s.isMultilingual === (None :Option[Boolean])
+        })
         select(s.id)
       )
     
@@ -796,7 +821,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
     val result1 =
       from(courses)(c=>
-        where(c.finalExamDate >= Some(jan2008) and c.finalExamDate.isNotNull)
+        where(c.finalExamDate >= Option(jan2008) and c.finalExamDate.isNotNull)
         select(c)
         orderBy(c.finalExamDate, c.id asc)
       ).toList.map(c=>c.id)
@@ -1076,8 +1101,6 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
       )
     q.toList
 
-
-    println(q.statement)
     assert(q.statement.indexOf("Having") != -1)
   }
 
@@ -1167,7 +1190,10 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
   }
 
   test("BatchUpdate1") {
+    
     val testInstance = sharedTestInstance; import testInstance._
+    import schema._
+        
     addresses.insert(List(
       new Address("St-Dominique",14, None,None,None),
       new Address("St-Urbain",23, None,None,None),
@@ -1196,6 +1222,29 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
     passed('testBatchUpdate1)
   }
+  
+  test("BatchUpdateAndInsert2") {
+    
+    val testInstance = sharedTestInstance; import testInstance._
+    import schema._
+    
+    
+    courses2.insert(
+        Seq(Course2(0, "Programming 101", false, 0),
+            Course2(0, "Programming 102", false, 0)))
+    
+    val c = courses2.where(_.name like "Programming %")
+    val c0 = c.toList
+    
+    assert(c0.size == 2)
+    assert(c0.filter(_.confirmed).size == 0)
+
+    courses2.update(c0.map(_.copy(confirmed = true)))
+    
+    assert(c.filter(_.confirmed).size == 2)
+    
+    passed('BatchUpdateAndInsert2)
+  }
 
   test("BigDecimal") {
     val testInstance = sharedTestInstance; import testInstance._
@@ -1216,7 +1265,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
     val babaZula2 = professors.where(_.weightInBD === Some(261.123456111: BigDecimal))
 
-    assertEquals(261.123456111, babaZula2.single.weightInBD.get, 'testBigDecimal)
+    assertEquals(BigDecimal(261.123456111), babaZula2.single.weightInBD.get, 'testBigDecimal)
 
     update(professors)(p=>
       where(p.id === babaZula.id)
@@ -1234,7 +1283,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
     val babaZula4 = professors.where(_.weightInBD === Some(532.2469122224: BigDecimal))
 
-    assertEquals(532.2469122224, babaZula4.single.weightInBD.get, 'testBigDecimal)
+    assertEquals(BigDecimal(532.2469122224), babaZula4.single.weightInBD.get, 'testBigDecimal)
     assertEquals(1, babaZula4.Count : Long, 'testBigDecimal)
 
     update(professors)(p=>
@@ -1244,7 +1293,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
     val babaZula5 = professors.where(_.yearlySalaryBD === 170)
 
-    assertEquals(170, babaZula5.single.yearlySalaryBD, 'testBigDecimal)
+    assertEquals(BigDecimal(170), babaZula5.single.yearlySalaryBD, 'testBigDecimal)
     assertEquals(1, babaZula5.Count : Long, 'testBigDecimal)
   }
 
@@ -1267,7 +1316,6 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
         where(s2.age gt 0)
         compute(min(s2.age))
       )
-
 
     val q2 = (z0 : Query[Measures[Option[Int]]] ):  Query[Option[Int]]
 
@@ -1292,7 +1340,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
         select(s)
       )
 
-    val allStuents = students.map(_.id).toSet
+    val allStuents = students.allRows.map(_.id).toSet
     val allStudentsQ = q.map(_.id).toSet
 
     assertEquals(allStuents, allStudentsQ, 'testIsNotNullWithInhibition)
@@ -1359,7 +1407,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     val testInstance = sharedTestInstance; import testInstance._
     // this should not blow up :
     val q = students.where(_.dummyKey === (None: Option[Int], None: Option[Int]))
-    println(q.statement)
+
     q.toList
   }
 
@@ -1394,7 +1442,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
   test("Boolean2LogicalBooleanConversion") {
     val testInstance = sharedTestInstance; import testInstance._
 
-    val multilingualStudents = students.where(_.isMultilingual === Some(true)).map(_.id).toSet
+    val multilingualStudents = students.where(_.isMultilingual === Option(true)).map(_.id).toSet
 
     //println(multilingualStudents)
     //List(Student:1:Xiao, Student:4:Gontran, Student:5:Gaitan)
@@ -1418,11 +1466,11 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
       )
 
 
-    val expectedAvgSal_ = professors.map(_.yearlySalaryBD.doubleValue)
+    val expectedAvgSal_ = professors.allRows.map(_.yearlySalaryBD.doubleValue)
 
     val expectedAvgSal = expectedAvgSal_.sum / expectedAvgSal_.size
 
-    val expectedAvgWeight_ = professors.map(_.weightInBD).filter(_ != None).map(_.get)
+    val expectedAvgWeight_ = professors.allRows.map(_.weightInBD).filter(_ != None).map(_.get)
 
     val expectedAvgWeight = expectedAvgWeight_.sum / expectedAvgWeight_.size
 
@@ -1463,6 +1511,18 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     assert(expected == res, "expected :\n " + expected + "\ngot : \n " + res)
 
     passed('testNewOuterJoin3 )
+  }
+  
+  test("TestYieldInspectionLeakViaCGLIB", SingleTestRun) {
+      tests.insert(List(YieldInspectionTest(1, 100), YieldInspectionTest(1,500), YieldInspectionTest(2,600)))
+      others.insert(List(YieldInspectionAnother(1, "One", 1), YieldInspectionAnother(2, "Two", 2)))
+
+      val group = from(tests)(t=> groupBy(t.id) compute(sum(t.num)))
+
+      val testQuery = join(group, others)((g, o)=>
+        select(g.measures.get, o)
+        on(g.key === o.testId)
+        ).toList
   }
 
   test("Exists")  {
@@ -1516,12 +1576,8 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
 
   }
 
-  ignore("VeryVeryNestedExists"){
+  test("VeryVeryNestedExists"){
     val testInstance = sharedTestInstance; import testInstance._
-    // XXX This doesn't work s.addressId in s.addressId === a2.id is created
-    // as a direct ieldSelectElement, not ExportedSelectElement (however note that
-    // s.addressId in where(s.addressId in ... is created correctly (and then correctly
-    // resolved as an outer reference)
     val qStudents = from(students) ((s) => select(s))
     val qStudentsFromStudents = from(qStudents) ((s) => select(s))
     val studentsWithAnAddress =

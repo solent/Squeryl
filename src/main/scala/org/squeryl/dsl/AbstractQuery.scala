@@ -103,7 +103,6 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     val qen = new QueryExpressionNode[R](this, qy, subQueries, views)
     val (sl,d) = qy.invokeYieldForAst(qen, resultSetMapper)
     qen.setOutExpressionNodesAndSample(sl, d)
-    qen.propagateOuterScope()
 
 //    sl.filter(_.isInstanceOf[ExportedSelectElement]).
 //       map(_.asInstanceOf[ExportedSelectElement]).
@@ -153,7 +152,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
 
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
-  override def iterator = new Iterator[R] with Closeable {
+  def iterator = new Iterator[R] with Closeable {
     var session: Option[Session] = None
     if (!Session.hasCurrentSession) {
       val s = org.squeryl.SessionFactory.newSession

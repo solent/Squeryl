@@ -545,7 +545,7 @@ object FieldMetaData {
   def defaultFieldLength(fieldType: Class[_], fmd: FieldMetaData) = {
     if(classOf[String].isAssignableFrom(fieldType))
       fmd.schema.defaultLengthOfString      
-    else if(classOf[BigDecimal].isAssignableFrom(fieldType))
+    else if(classOf[scala.math.BigDecimal].isAssignableFrom(fieldType) || classOf[BigDecimal].isAssignableFrom(fieldType))
       fmd.schema.defaultSizeOfBigDecimal._1
     else
       fmd.schema.fieldMapper.defaultColumnLength(fieldType)

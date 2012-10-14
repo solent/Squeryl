@@ -153,6 +153,12 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
   def iterator = new Iterator[R] with Closeable {
+    var session: Option[Session] = None
+    if (!Session.hasCurrentSession) {
+      val s = org.squeryl.SessionFactory.newSession
+      s.bindToCurrentThread
+      session = Some(s)
+    }
 
     val sw = new StatementWriter(false, _dbAdapter)
     ast.write(sw)
@@ -175,15 +181,19 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     
     def close {
       stmt.close
-      rs.close
+      Utils.close(rs)
+      session.foreach {s =>
+        s.unbindFromCurrentThread
+        s.cleanup
+      }
+      session = None
     }
 
     def _next = {
       _hasNext = rs.next
 
       if(!_hasNext) {// close it since we've completed the iteration
-        Utils.close(rs)
-        stmt.close
+        close
 
         if(s.statisticsListener != None) {
           s.statisticsListener.get.resultSetIterationEnded(statEx.uuid, System.currentTimeMillis, rowCount, true)
@@ -214,7 +224,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     }
   }
 
-  override def toString = dumpAst + "\n" + _genStatement(true)
+  override def toString = dumpAst + (if (Session.hasCurrentSession) "\n" + _genStatement(true) else "")
 
   protected def createSubQueryable[U](q: Queryable[U]): SubQueryable[U] =
     if(q.isInstanceOf[View[_]]) {

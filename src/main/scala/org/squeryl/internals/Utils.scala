@@ -107,10 +107,11 @@ object Utils {
 }
 
 class IteratorConcatenation[R](first: Iterator[R], second: Iterator[R]) extends Iterator[R] {
+  import org.squeryl.PrimitiveTypeMode.inTransaction
 
   var currentIterator = first
     
-  def _hasNext =
+  def _hasNext = inTransaction {
     if(currentIterator.hasNext) 
       true
     else if(currentIterator == second)
@@ -119,10 +120,11 @@ class IteratorConcatenation[R](first: Iterator[R], second: Iterator[R]) extends 
       currentIterator = second
       currentIterator.hasNext
     }
+  }
 
   def hasNext = _hasNext
   
-  def next = {
+  def next = inTransaction {
     _hasNext
     currentIterator.next
   }

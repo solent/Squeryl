@@ -9,7 +9,7 @@ object SquerylBuild extends Build {
     base = file("."),
     settings = Project.defaultSettings /* ++ lsSettings */ ++ Seq(
       description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety",
-      organization := "org.squeryl",
+      organization := "com.github.aselab",
       version := "0.9.6-M1",
 	  version <<= version { v => //only release *if* -Drelease=true is passed to JVM
 	  	val release = Option(System.getProperty("release")) == Some("true")
@@ -29,7 +29,7 @@ object SquerylBuild extends Build {
       publishMavenStyle := true,
       scalaVersion := "2.9.2",
       crossScalaVersions := Seq("2.10.0-M7", "2.9.2", "2.9.1", "2.9.0-1", "2.9.0"),
-      crossVersion := CrossVersion.full,
+      crossPaths := false,
       licenses := Seq("Apache 2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
       homepage := Some(url("http://squeryl.org")),
       pomExtra := (<scm>
@@ -48,12 +48,10 @@ object SquerylBuild extends Build {
                        <url>https://github.com/davewhittaker</url>
                      </developer>
                    </developers>),
-      publishTo <<= version { v => //add credentials to ~/.sbt/sonatype.sbt
-        val nexus = "https://oss.sonatype.org/"
-        if (v.trim.endsWith("SNAPSHOT"))
-          Some("snapshots" at nexus + "content/repositories/snapshots")
-        else
-          Some("releases" at nexus + "service/local/staging/deploy/maven2")
+      publishTo := Some(Resolver.file("file", file("target/publish"))),
+      publish ~= {_ =>
+        val script = Path.userHome / ".sbt/publish"
+        if (script.exists) "%s %s".format(script.getAbsolutePath, file("target/publish").getAbsolutePath) !
       },
       publishArtifact in Test := false,
       pomIncludeRepository := { _ => false },

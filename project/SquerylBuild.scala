@@ -48,10 +48,12 @@ object SquerylBuild extends Build {
                        <url>https://github.com/davewhittaker</url>
                      </developer>
                    </developers>),
-      publishTo := Some(Resolver.file("file", file("target/publish"))),
-      publish ~= {_ =>
-        val script = Path.userHome / ".sbt/publish"
-        if (script.exists) "%s %s".format(script.getAbsolutePath, file("target/publish").getAbsolutePath) !
+      publishTo <<= version { (v: String) =>
+        val nexus = "https://oss.sonatype.org/"
+        if (v.trim.endsWith("SNAPSHOT"))
+          Some("snapshots" at nexus + "content/repositories/snapshots")
+        else
+          Some("releases"  at nexus + "service/local/staging/deploy/maven2")
       },
       publishArtifact in Test := false,
       pomIncludeRepository := { _ => false },

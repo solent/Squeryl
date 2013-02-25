@@ -108,7 +108,7 @@ trait QueryDsl
     if(! Session.hasCurrentSession)
       _executeTransactionWithin(sf.newSession, a _)
     else
-      _executeTransactionWithin(Session.currentSession, a _)
+      a
 
    def transaction[A](s: Session)(a: =>A) = 
      _executeTransactionWithin(s, a _)
@@ -270,16 +270,16 @@ trait QueryDsl
   implicit def enumComparisonEvidence[A]   = new CanCompare[TEnumValue[A],TEnumValue[A]]
   
   implicit def concatenationConversion[A1,A2,T1,T2](co: ConcatOp[A1,A2,T1,T2]): TypedExpression[String,TString] = 
-    new ConcatOperationNode[String,TString](co.a1, co.a2, PrimitiveTypeMode.stringTEF.createOutMapper)
+    new ConcatOperationNode[String,TString](co.a1, co.a2, InternalFieldMapper.stringTEF.createOutMapper)
     
   implicit def concatenationConversionWithOption1[A1,A2,T1,T2](co: ConcatOp[Option[A1],A2,T1,T2]): TypedExpression[Option[String],TOptionString] = 
-    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, PrimitiveTypeMode.optionStringTEF.createOutMapper)
+    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, InternalFieldMapper.optionStringTEF.createOutMapper)
   
   implicit def concatenationConversionWithOption2[A1,A2,T1,T2](co: ConcatOp[A1,Option[A2],T1,T2]): TypedExpression[Option[String],TOptionString] = 
-    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, PrimitiveTypeMode.optionStringTEF.createOutMapper)
+    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, InternalFieldMapper.optionStringTEF.createOutMapper)
   
   implicit def concatenationConversionWithOption3[A1,A2,T1,T2](co: ConcatOp[Option[A1],Option[A2],T1,T2]): TypedExpression[Option[String],TOptionString] = 
-    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, PrimitiveTypeMode.optionStringTEF.createOutMapper)
+    new ConcatOperationNode[Option[String],TOptionString](co.a1, co.a2, InternalFieldMapper.optionStringTEF.createOutMapper)
   
   class ConcatOperationNode[A,T](e1: ExpressionNode, e2: ExpressionNode, val mapper: OutMapper[A]) extends BinaryOperatorNode(e1,e2, "||", false) with TypedExpression[A,T] {
     override def doWrite(sw: StatementWriter) =
@@ -315,7 +315,7 @@ trait QueryDsl
     )
     with TypedExpression[Long,TLong] {
     
-    def mapper = PrimitiveTypeMode.longTEF.createOutMapper    
+    def mapper = InternalFieldMapper.longTEF.createOutMapper    
     
     override def doWrite(sw: StatementWriter) = {
 
@@ -748,13 +748,16 @@ trait QueryDsl
     if(isSelfReference)
       assert(ee.right._fieldMetaData.isIdFieldOfKeyedEntity || ee.left._fieldMetaData.isIdFieldOfKeyedEntity)
 
+    def msg = 
+      "equality expression incorrect in relation involving table " + rightTable.prefixedName + ", or perhaps inverted oneToManyRelation"
+      
     if(ee.left._fieldMetaData.parentMetaData.clasz == rightTable.classOfT &&
        (!isSelfReference || (isSelfReference && ee.right._fieldMetaData.isIdFieldOfKeyedEntity)) ) {
-      assert(ee.right._fieldMetaData.isIdFieldOfKeyedEntity)
+      assert(ee.right._fieldMetaData.isIdFieldOfKeyedEntity, msg)
       (ee.right._fieldMetaData, ee.left._fieldMetaData)
     }
     else {
-      assert(ee.left._fieldMetaData.isIdFieldOfKeyedEntity)
+      assert(ee.left._fieldMetaData.isIdFieldOfKeyedEntity, msg)
       (ee.left._fieldMetaData, ee.right._fieldMetaData)
     }
   }

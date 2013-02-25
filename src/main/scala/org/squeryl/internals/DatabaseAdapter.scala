@@ -181,6 +181,24 @@ trait DatabaseAdapter {
   def timestampTypeDeclaration = "timestamp"
   def binaryTypeDeclaration = "binary"
   def uuidTypeDeclaration = "char(36)"
+  def intArrayTypeDeclaration = intTypeDeclaration + "[]"
+  def longArrayTypeDeclaration = longTypeDeclaration + "[]"
+  def doubleArrayTypeDeclaration = doubleTypeDeclaration + "[]"
+    
+  def jdbcIntArrayCreationType = intTypeDeclaration
+  def jdbcLongArrayCreationType = longTypeDeclaration
+  def jdbcDoubleArrayCreationType = doubleTypeDeclaration
+    
+  final def arrayCreationType(ptype : Class[_]) : String = {
+    val rv = ptype.getName() match {
+      case "java.lang.Integer" => jdbcIntArrayCreationType
+      case "java.lang.Double" => jdbcDoubleArrayCreationType
+      case "java.lang.Long" => jdbcLongArrayCreationType
+      case _ => ""
+    }
+    rv
+  }
+    
 /*
   private val _declarationHandler = new FieldTypeHandler[String] {
 
@@ -309,7 +327,7 @@ trait DatabaseAdapter {
   protected def execFailSafeExecute(sw: StatementWriter, silenceException: SQLException => Boolean): Unit = {
     val s = Session.currentSession
     val c = s.connection
-    val stat = c.createStatement
+    val stat = createStatement(c)
     val sp =
       if(failureOfStatementRequiresRollback) Some(c.setSavepoint)
       else None
@@ -346,20 +364,26 @@ trait DatabaseAdapter {
     _exec[A](s, sw, block, p)
   }
 
+  protected def prepareStatement(conn: Connection, statement: String): PreparedStatement =
+    conn.prepareStatement(statement)
+
+  protected def createStatement(conn: Connection): Statement =
+    conn.createStatement()
+
   def executeQuery(s: Session, sw: StatementWriter) = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     (st.executeQuery, st)
   }
 
   def executeUpdate(s: Session, sw: StatementWriter):(Int,PreparedStatement) = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     (st.executeUpdate, st)
   }
 
   def executeUpdateAndCloseStatement(s: Session, sw: StatementWriter): Int = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     try {
       st.executeUpdate
@@ -790,9 +814,15 @@ trait DatabaseAdapter {
         binaryTypeDeclaration
       else if(classOf[BigDecimal].isAssignableFrom(c))
         bigDecimalTypeDeclaration                  
+      else if(classOf[scala.Array[Int]].isAssignableFrom(c))
+        intArrayTypeDeclaration
+      else if(classOf[scala.Array[Long]].isAssignableFrom(c))
+        longArrayTypeDeclaration
+      else if(classOf[scala.Array[Double]].isAssignableFrom(c))
+        doubleArrayTypeDeclaration
       else
         Utils.throwError("unsupported type " + ar.getClass.getCanonicalName)
-                  
+     
       decl    
   }
 

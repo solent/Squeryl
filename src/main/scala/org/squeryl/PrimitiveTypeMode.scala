@@ -25,8 +25,11 @@ import java.sql.ResultSet
 import org.squeryl.internals.Utils
 import org.squeryl.internals.FieldMapper
 
-
+@deprecated("the PrimitiveTypeMode companion object is deprecated, you should define a mix in the trait for your application. See : http://squeryl.org/0.9.6.html",
+    "0.9.6")
 object PrimitiveTypeMode extends PrimitiveTypeMode
+
+private [squeryl] object InternalFieldMapper extends PrimitiveTypeMode
 
 trait PrimitiveTypeMode extends QueryDsl with FieldMapper {
     
@@ -38,6 +41,9 @@ trait PrimitiveTypeMode extends QueryDsl with FieldMapper {
   implicit val optionDateTEF = PrimitiveTypeSupport.optionDateTEF    
   implicit val timestampTEF = PrimitiveTypeSupport.timestampTEF
   implicit val optionTimestampTEF = PrimitiveTypeSupport.optionTimestampTEF
+  implicit val doubleArrayTEF = PrimitiveTypeSupport.doubleArrayTEF
+  implicit val intArrayTEF = PrimitiveTypeSupport.intArrayTEF
+  implicit val longArrayTEF = PrimitiveTypeSupport.longArrayTEF
   
   // =========================== Numerical Integral =========================== 
   implicit val byteTEF = PrimitiveTypeSupport.byteTEF
@@ -97,5 +103,9 @@ trait PrimitiveTypeMode extends QueryDsl with FieldMapper {
   
   implicit def bigDecimalToTE(f: BigDecimal) = bigDecimalTEF.create(f)    
   implicit def optionBigDecimalToTE(f: Option[BigDecimal]) = optionBigDecimalTEF.create(f)
+  
+  implicit def doubleArrayToTE(f : Array[Double]) = doubleArrayTEF.create(f)
+  implicit def intArrayToTE(f : Array[Int]) = intArrayTEF.create(f)
+  implicit def longArrayToTE(f : Array[Long]) = longArrayTEF.create(f)
   
 }

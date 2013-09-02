@@ -175,9 +175,12 @@ class Schema(implicit val fieldMapper: FieldMapper) {
       _dbAdapter.dropTable(t)
       _dbAdapter.postDropTable(t)
     }
+
+    _dropSchemas
   }  
 
   def create = {
+    _createSchemas
     _createTables
     if(_dbAdapter.supportsForeignKeyConstraints)
       _declareForeignKeyConstraints
@@ -276,6 +279,24 @@ class Schema(implicit val fieldMapper: FieldMapper) {
       _dbAdapter.postCreateTable(t, None)
       for(indexDecl <- _indexDeclarationsFor(t))
         _executeDdl(indexDecl)
+    }
+  }
+
+  private def schemaNames = _tables.map( _.prefix ).filter( _.isDefined ).map( _.get ).toSet[String]
+
+  private def _createSchemas = {
+    for (schemaName <- this.schemaNames ) {
+      val sw = new StatementWriter( _dbAdapter )
+      _dbAdapter.writeCreateSchema( schemaName, sw )
+      _executeDdl(sw.statement)
+    }
+  }
+
+  private def _dropSchemas = {
+    for( schemaName <- this.schemaNames ) {
+      val sw = new StatementWriter( _dbAdapter )
+      _dbAdapter.writeDropSchema( schemaName, sw )
+      _executeDdl(sw.statement)
     }
   }
 

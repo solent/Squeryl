@@ -281,8 +281,18 @@ trait DatabaseAdapter {
       )
     }
     sw.write(")")
-  }                     
-  
+  }
+
+  def writeCreateSchema(name: String, sw: StatementWriter) = {
+    sw.write("create schema ")
+    sw.write( quoteName(name) )
+  }
+
+  def writeDropSchema(name: String, sw: StatementWriter) = {
+    sw.write("drop schema ")
+    sw.write( quoteName(name ) )
+  }
+
   def convertParamsForJdbc(params: Iterable[AnyRef]) =
     for(p <- params) yield {
        p match {

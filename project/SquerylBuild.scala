@@ -9,8 +9,8 @@ object SquerylBuild extends Build {
     base = file("."),
     settings = Project.defaultSettings /* ++ lsSettings */ ++ Seq(
       description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety",
-      organization := "com.github.aselab",
-      version := "0.9.6-M1",
+      organization := "com.github.solent",
+      version := "0.9.6.SOLENT-M1", // As per version computation hereafter, SOLENT classifier must not be after a "-" and must be before patch level ("M1")
       javacOptions := Seq("-source", "1.6", "-target", "1.6"),
   	  version <<= version { v => //only release *if* -Drelease=true is passed to JVM
   	  	val release = Option(System.getProperty("release")) == Some("true")
